@@ -1,11 +1,37 @@
+// curl.exe http://localhost:8080/... to call
+
+// test createTask() logs
+/*
+$body = @{
+    title = "Learn slog"
+    description = "Structured logging practice"
+    status = "pending"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+-Method POST `
+-Uri http://localhost:8080/tasks `
+-ContentType "application/json" `
+-Body $body
+
+then check go run
+*/
+
 package main
 
 import (
+	"log/slog" // slog go import
+	"os"       // for stdout
+
 	"net/http" // for http status codes
 	"strconv"  // convert url id into integer
 
 	"github.com/gin-gonic/gin" // gin framwork
 )
+
+// MARK: slog global var
+
+var logger *slog.Logger // -> global logger variable
 
 type Task struct { // -> the structure of the Task object
 	ID          int    `json:"id"`
@@ -40,6 +66,15 @@ var tasks = []Task{
 var nextID = 3
 
 func main() { // -> main function for program
+
+	// MARK: slog setup
+
+	logger = setupLogger()
+
+	logger.Info(
+		"server starting",
+	)
+
 	router := gin.Default() // -> creates the router with default middleware stuff
 
 	router.GET("/health", healthHandler) // -> just to check if API is good (health check)
@@ -56,6 +91,14 @@ func main() { // -> main function for program
 
 // healthHandler returns a simple response so I know the server is alive.
 func healthHandler(c *gin.Context) { // -> health check handle
+
+	// MARK: slog health check
+
+	logger.Info( // logger for health check
+		"health check requested",
+		slog.String("endpoint", "/health"),
+	)
+
 	c.JSON(http.StatusOK, gin.H{
 		"status": "ok",
 	})
@@ -96,6 +139,14 @@ func createTask(c *gin.Context) { // to create a new task from JSON from the cli
 	err := c.ShouldBindJSON(&newTask)
 
 	if err != nil {
+
+		// MARK: slog warn
+
+		logger.Warn( // using slog for errors
+			"invalid task payload",
+			slog.Any("error", err),
+		)
+
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -108,6 +159,16 @@ func createTask(c *gin.Context) { // to create a new task from JSON from the cli
 
 	// add new task in the memory storage
 	tasks = append(tasks, newTask)
+
+	// MARK: slog info
+
+	// logging
+	logger.Info(
+		"task created",
+		slog.Int("task_id", newTask.ID),
+		slog.String("title", newTask.Title),
+		slog.String("status", newTask.Status),
+	)
 
 	// new resource was successfully created (201 status code)
 	c.JSON(http.StatusCreated, newTask)
@@ -183,4 +244,20 @@ func deleteTask(c *gin.Context) { // delete a task based on id
 	c.JSON(http.StatusNotFound, gin.H{
 		"error": "Task not found",
 	})
+}
+
+func setupLogger() *slog.Logger {
+
+	handler := slog.NewJSONHandler(
+		os.Stdout,
+		nil,
+	)
+
+	logger := slog.New(handler)
+
+	return logger.With(
+		slog.String("service", "task-api"),
+		slog.String("environment", "development"),
+	)
+
 }
