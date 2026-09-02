@@ -1,35 +1,14 @@
-# Go Production Backend Notes: Phase 1 (slog basics)
+## Phase 2: Gin Request Logging Middleware
 
-## 1. Structured Logging
-*   **Concept:** Structured logs output machine-readable key-value pairs (JSON).
-*   **Current Implementation:** Used `slog.NewJSONHandler(os.Stdout, nil)` to ensure all outputs are strictly JSON.
+### 1. Bypassing Default Loggers
+*   **Concept:** Standard frameworks often come with built-in text loggers. 
+*   **Current Implementation:** Swapped `router := gin.Default()` for `router := gin.New()` (along with `gin.Recovery()`) to completely disable Gin's unstructured terminal output.
 
-## 2. Global Attributes
-*   **Concept:** Injecting metadata into the logger instance once globally to apply to every output.
-*   **Current Implementation:** 
-    ```go
-    logger.With(
-        slog.String("service", "task-api"),
-        slog.String("environment", "development"),
-    )
-    ```
+### 2. Centralized Middleware Logging
+*   **Concept:** It starts a timer when a request arrives, hands control to the handler using `c.Next()`, and logs the metrics when the handler finishes.
 
-## 3. Business Event Logging
-*   **The Concept:** Logs should tell a story about business operations, not narrate every line of code executing.
-*   **Current Implementation:** Instead of logging "entering createTask function", better to log the milestone.
-    ```go
-    logger.Info(
-        "task created",
-        slog.Int("task_id", newTask.ID),
-        slog.String("title", newTask.Title),
-    )
-    ```
-
-## 4. INFO vs WARN vs ERROR logs
-*   **INFO (System):** Used for expected events (`"server starting"`) and business actions (`"health check requested"`).
-*   **WARN (Client Errors):** Used when something went wrong, but the backend handled it correctly (system is still healthy).
-    *   *My Example:* When a user sends bad JSON, `c.ShouldBindJSON` catches it. The server didn't crash; the client just made a mistake. This is a `WARN`.
-*   **ERROR (Server Failures):** For infrastructure failures. In production, `ERROR` logs trigger alerts. Never log an `ERROR` for a client-side mistake.
-
-## 5. Context Logging
-*   **Concept:** Functions like `slog.ErrorContext()` accept a `context.Context` object, allowing the logger to automatically extract request data.
+### 3. Handling Internal Errors vs. Client Responses
+*   **Concept:** When a backend operation fails, the system warns both the client and internal team
+*   **Status Code Log Rule:**
+    *   **400 (Bad Request) / 401 (Unauthorized) -> `logger.Warn()`**: The client made a mistake (bad JSON, invalid token). The server handled it correctly and is still healthy.
+    *   **500 (Internal Server Error) -> `logger.Error()`**: The server failed (database connection dropped). This requires immediate development attention and should trigger an alert.

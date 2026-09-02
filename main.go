@@ -23,6 +23,8 @@ import (
 	"log/slog" // slog go import
 	"os"       // for stdout
 
+	"time"
+
 	"net/http" // for http status codes
 	"strconv"  // convert url id into integer
 
@@ -75,7 +77,11 @@ func main() { // -> main function for program
 		"server starting",
 	)
 
-	router := gin.Default() // -> creates the router with default middleware stuff
+	router := gin.New() // -> creates the router without default loggers
+
+	router.Use(gin.Recovery()) // recovery middleware
+
+	router.Use(slogMiddleware(logger)) // -> custom logger middleware
 
 	router.GET("/health", healthHandler) // -> just to check if API is good (health check)
 
@@ -260,4 +266,27 @@ func setupLogger() *slog.Logger {
 		slog.String("environment", "development"),
 	)
 
+}
+
+// MARK: slog middleware
+
+func slogMiddleware(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+
+		c.Next()
+
+		latency := time.Since(start)
+		status := c.Writer.Status()
+		method := c.Request.Method
+		path := c.Request.URL.Path
+
+		logger.Info(
+			"HTTP request",
+			slog.Int("status", status),
+			slog.String("method", method),
+			slog.String("path", path),
+			slog.String("latency", latency.String()),
+		)
+	}
 }
