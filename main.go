@@ -81,6 +81,8 @@ func main() { // -> main function for program
 
 	router.Use(gin.Recovery()) // recovery middleware
 
+	router.Use(requestIDMiddleware()) // -> custom request ID middleware
+
 	router.Use(slogMiddleware(logger)) // -> custom logger middleware
 
 	router.GET("/health", healthHandler) // -> just to check if API is good (health check)
@@ -98,11 +100,14 @@ func main() { // -> main function for program
 // healthHandler returns a simple response so I know the server is alive.
 func healthHandler(c *gin.Context) { // -> health check handle
 
+	reqID, _ := c.Get("request_id") // -> get the request id from the context
+
 	// MARK: slog health check
 
 	logger.Info( // logger for health check
 		"health check requested",
 		slog.String("endpoint", "/health"),
+		slog.Any("request_id", reqID), // inject to the log
 	)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -281,12 +286,32 @@ func slogMiddleware(logger *slog.Logger) gin.HandlerFunc {
 		method := c.Request.Method
 		path := c.Request.URL.Path
 
+		reqID, _ := c.Get("request_id") // -> get the request id from the context
+
 		logger.Info(
 			"HTTP request",
 			slog.Int("status", status),
 			slog.String("method", method),
 			slog.String("path", path),
 			slog.String("latency", latency.String()),
+			slog.Any("request_id", reqID), // inject to the log
 		)
+	}
+}
+
+// MARK: context logging
+
+func requestIDMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 1. generate a mock Request ID (in production, use UUIDs)
+		reqID := "req-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+
+		// 2. add to Gin's internal context so handlers can access it
+		c.Set("request_id", reqID)
+
+		// 3. add it to the HTTP response header (good practice)
+		c.Writer.Header().Set("X-Request-ID", reqID)
+
+		c.Next()
 	}
 }
